@@ -32,16 +32,46 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _handleSendMessage() {
-    if (_controller.text.isNotEmpty) {
-      setState(() {
-        _messages.add(_controller.text);
-        _controller.clear();
-        _isTyping = false;
-      });
-    }
-  }
+  // Inside _HomeScreenState in home_screen.dart
 
+void _handleSendMessage() async {
+  if (_controller.text.isNotEmpty) {
+    String query = _controller.text;
+    
+    setState(() {
+      _messages.add(query); // Add user query to UI
+      _controller.clear();
+      _isTyping = false;
+    });
+
+    // Call the backend/AI service
+    await _searchForFile(query);
+  }
+}
+
+Future<void> _searchForFile(String query) async {
+  // 1. Show a loading indicator in the chat
+  setState(() {
+    _messages.add("Searching for: $query...");
+  });
+
+  // 2. Simulated Backend/AI Logic
+  // In a real app, use the 'http' package to call your API
+  try {
+    // Example: var response = await http.post(Uri.parse('YOUR_AI_BACKEND_URL'), body: {'query': query});
+    
+    // For now, let's simulate a successful find:
+    await Future.delayed(const Duration(seconds: 2)); // Simulate network lag
+    
+    setState(() {
+      _messages.add("Found it! Here is your file: $query.pdf");
+    });
+  } catch (e) {
+    setState(() {
+      _messages.add("Sorry, I couldn't find that file.");
+    });
+  }
+}
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -83,6 +113,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       itemBuilder: (context, index) {
                         return Align(
                           alignment: Alignment.centerRight,
+                          child: GestureDetector(
+                            onTap: () {
+                              if (_messages[index].contains(".pdf")) {
+                              // Open PDF Viewer Screen
+                              print("Opening PDF...");
+                            }
+                          },
                           child: Container(
                             margin: const EdgeInsets.symmetric(vertical: 8),
                             padding: const EdgeInsets.all(14),
@@ -99,9 +136,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               style: const TextStyle(color: Colors.white, fontSize: 16),
                             ),
                           ),
-                        );
-                      },
-                    ),
+                        ),
+                       );
+                    },
+                  ),
             ),
 
             // 3. Bottom Input Section (Typing area)
