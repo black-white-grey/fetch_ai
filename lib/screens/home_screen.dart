@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
-import 'history_drawer.dart'; // Import to allow navigation
+import 'history_drawer.dart';
+import 'home_screen.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart'; 
+import 'package:open_filex/open_filex.dart';// Import to allow navigation
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -34,6 +39,63 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Inside _HomeScreenState in home_screen.dart
 
+Future<void> _autoSearchFiles(String query) async {
+  setState(() {
+    _messages.add("Analyzing your request: '$query'...");
+  });
+
+  // 1. Simple Keyword Parsing
+  DateTime now = DateTime.now();
+  DateTime? startTime;
+
+  if (query.toLowerCase().contains("week")) {
+    startTime = now.subtract(const Duration(days: 7));
+  } else if (query.toLowerCase().contains("month")) {
+    startTime = now.subtract(const Duration(days: 30));
+  }
+
+  if (startTime == null) {
+    setState(() {
+      _messages.add("I'm not sure which time frame you mean. Try 'this week'.");
+    });
+    return;
+  }
+
+  // 2. Access the File Manager (Internal Storage)
+  try {
+    // We search the Documents directory for safety
+    final directory = await getApplicationDocumentsDirectory(); 
+    final List<FileSystemEntity> files = directory.listSync();
+    
+    List<String> foundFiles = [];
+
+    for (var file in files) {
+      if (file is File && file.path.endsWith('.pdf')) {
+        DateTime fileDate = file.lastModifiedSync();
+        // Check if file date is within the requested range
+        if (fileDate.isAfter(startTime)) {
+          foundFiles.add(file.path.split('/').last);
+        }
+      }
+    }
+
+    // 3. Send the result back to UI
+    setState(() {
+      if (foundFiles.isNotEmpty) {
+        _messages.add("I found ${foundFiles.length} PDF(s) from that period:");
+        for (var fileName in foundFiles) {
+          _messages.add("📄 $fileName");
+        }
+      } else {
+        _messages.add("I couldn't find any PDFs from that timeframe in your documents.");
+      }
+    });
+  } catch (e) {
+    setState(() {
+      _messages.add("Error accessing file manager: $e");
+    });
+  }
+}
 void _handleSendMessage() async {
   if (_controller.text.isNotEmpty) {
     String query = _controller.text;
@@ -72,6 +134,54 @@ Future<void> _searchForFile(String query) async {
     });
   }
 }
+
+Future<void> _autoSearchFilesV2(String query) async {
+  // 1. Request storage permission
+  var status = await Permission.storage.request();
+  
+  if (status.isGranted) {
+    setState(() {
+      _messages.add("AI: Searching your files for '$query'...");
+    });
+
+    try {
+      // 2. Define and find the files
+      final directory = await getApplicationDocumentsDirectory();
+      final List<FileSystemEntity> entities = directory.listSync();
+      
+      // Define foundFiles HERE so the code below can see it
+      List<String> foundFiles = [];
+
+      for (var entity in entities) {
+        if (entity is File && entity.path.endsWith('.pdf')) {
+          // Add your time-filtering logic here if needed
+          foundFiles.add(entity.path.split('/').last);
+        }
+      }
+
+      // 3. Now check if foundFiles is empty or not
+      setState(() {
+        if (foundFiles.isNotEmpty) {
+          _messages.add("AI: I found these files for you:");
+          for (var fileName in foundFiles) {
+            _messages.add("FILE: $fileName");
+          }
+        } else {
+          _messages.add("AI: Sorry, I couldn't find any PDFs matching that.");
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _messages.add("AI: Error accessing files: $e");
+      });
+    }
+  } else {
+    setState(() {
+      _messages.add("AI: Permission denied. I cannot search files.");
+    });
+  }
+}
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -111,35 +221,41 @@ Future<void> _searchForFile(String query) async {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: _messages.length,
                       itemBuilder: (context, index) {
-                        return Align(
-                          alignment: Alignment.centerRight,
-                          child: GestureDetector(
-                            onTap: () {
-                              if (_messages[index].contains(".pdf")) {
-                              // Open PDF Viewer Screen
-                              print("Opening PDF...");
-                            }
-                          },
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(vertical: 8),
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.black, // Black bubble
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: const Color(0xFFFFB6C1), // Baby pink border
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Text(
-                              _messages[index],
-                              style: const TextStyle(color: Colors.white, fontSize: 16),
-                            ),
-                          ),
-                        ),
-                       );
-                    },
-                  ),
+  return Align(
+    alignment: Alignment.centerRight,
+    child: GestureDetector(
+      onTap: () async {
+  if (_messages[index].startsWith("FILE:")) {
+    String fileName = _messages[index].replaceFirst("FILE: ", "");
+    final directory = await getApplicationDocumentsDirectory();
+    String filePath = '${directory.path}/$fileName';
+
+    // This uses the package you just downgraded/installed
+    await OpenFilex.open(filePath); 
+  }
+},
+      
+      // MOVE THE CONTAINER HERE - inside the GestureDetector
+      child: Container( 
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: const Color(0xFFFFB6C1), 
+            width: 1.5,
+          ),
+        ),
+        child: Text(
+          _messages[index],
+          style: const TextStyle(color: Colors.white),
+        ),
+      ),
+    ),
+  );
+}
+                  )
             ),
 
             // 3. Bottom Input Section (Typing area)
