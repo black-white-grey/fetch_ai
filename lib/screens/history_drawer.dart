@@ -1,81 +1,77 @@
 import 'package:flutter/material.dart';
+import 'historysearch_screen.dart';
 
+// IMPORTANT: Name this class 'HistoryDrawer' to match your home_screen.dart
 class HistoryDrawer extends StatelessWidget {
   const HistoryDrawer({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Drawer(
-      width: MediaQuery.of(context).size.width * 0.85,
+    return Scaffold(
       backgroundColor: const Color(0xFF1E1E1E),
-      child: Column(
-        children: [
-          const SizedBox(height: 50),
-          _buildHeader(context),
-          const SizedBox(height: 20),
-          Expanded(
-            child: ListView(
-              children: [
-                _historyTile("name of file searched 2 hours ago", "2hr"),
-                _historyTile("name of file searched 1 week ago", "1w"),
-              ],
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Header Row
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  _iconWithBorder(Icons.settings, () {
+                    // Navigate to settings_screen.dart later
+                  }),
+                  const SizedBox(width: 12),
+                  const Text(
+                    "User name",
+                    style: TextStyle(color: Colors.white, fontSize: 18),
+                  ),
+                  const Spacer(),
+                  _iconWithBorder(Icons.search, () {
+                    // Smooth Transition to History Search Screen
+                    Navigator.of(context).push(_createSearchRoute());
+                  }),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () => Navigator.pop(context),
-          ),
-          _iconWithBorder(Icons.settings),
-          const SizedBox(width: 10),
-          const Text("User name", style: TextStyle(fontSize: 18)),
-          const Spacer(),
-          _iconWithBorder(Icons.search),
-        ],
-      ),
-    );
-  }
-
-  Widget _iconWithBorder(IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: const Color(0xFFFFB6C1), width: 1),
-      ),
-      child: Icon(icon, size: 20, color: Colors.white),
-    );
-  }
-
-  Widget _historyTile(String title, String time) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListTile(
-          title: Text(title, style: const TextStyle(fontSize: 14, color: Colors.white)),
-          trailing: const Icon(Icons.more_vert, size: 20, color: Colors.white),
+            const Expanded(
+              child: Center(
+                child: Text("No history yet", style: TextStyle(color: Colors.white24)),
+              ),
+            ),
+          ],
         ),
-        Padding(
-          padding: const EdgeInsets.only(left: 16, bottom: 10),
-          child: Row(
-            children: [
-              const Icon(Icons.access_time, size: 12, color: Colors.grey),
-              const SizedBox(width: 4),
-              Text(time, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-            ],
-          ),
+      ),
+    );
+  }
+
+  Widget _iconWithBorder(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0xFFFFB6C1), width: 1.5),
         ),
-        const Divider(color: Color(0xFFFFB6C1), thickness: 0.5, height: 1),
-      ],
+        child: Icon(icon, size: 20, color: Colors.white),
+      ),
+    );
+  }
+
+  Route _createSearchRoute() {
+    return PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => const HistorySearchScreen(),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(0.0, 1.0); // Slides up from bottom
+        const end = Offset.zero;
+        const curve = Curves.easeOutQuart;
+        var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+        return SlideTransition(position: animation.drive(tween), child: child);
+      },
     );
   }
 }

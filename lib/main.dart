@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/home_screen.dart'; // Ensure this path is correct
+import 'screens/home_screen.dart'; // Ensure this path is correct';
 
 void main() => runApp(const FetchAIApp());
 
