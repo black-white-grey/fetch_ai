@@ -130,10 +130,21 @@ class _HomeScreenState extends State<HomeScreen> {
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: const Color(0xFFFFB6C1), width: 1.5),
                       ),
-                      child: Text(
-                        _messages[index],
-                        style: const TextStyle(color: Colors.white),
-                      ),
+                     child: Row(
+  mainAxisSize: MainAxisSize.min, // Prevents the bubble from stretching too far
+  children: [
+    if (isFileResponse) ...[
+      const Icon(Icons.picture_as_pdf, color: Colors.red, size: 24),
+      const SizedBox(width: 10),
+    ],
+    Flexible( // Wraps text if the filename is very long
+      child: Text(
+        _messages[index],
+        style: const TextStyle(color: Colors.white),
+      ),
+    ),
+  ],
+),
                     ),
                   ),
                 );
