@@ -6,12 +6,14 @@ class HistoryDrawer extends StatelessWidget {
   // Define the parameters the drawer will receive
   final List<Map<String, String>> historyItems;
   final Function(String) onFileTap;
+  final Function(int) onDelete;
 
   // Add them to the constructor
   const HistoryDrawer({
     super.key, 
     required this.historyItems, 
     required this.onFileTap,
+    required this.onDelete,
   });
 
   @override
@@ -39,6 +41,13 @@ class HistoryDrawer extends StatelessWidget {
                             historyItems[index]['name'] ?? 'Unknown File',
                             style: const TextStyle(color: Colors.white),
                           ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.white54),
+                            onPressed: () {
+                               // This triggers the delete function in HomeScreen
+                            onDelete(index); 
+                              },
+                            ),
                           onTap: () {
                             // Close the drawer and open the file
                             Navigator.pop(context);

@@ -101,9 +101,15 @@ class _HomeScreenState extends State<HomeScreen> {
       drawer: HistoryDrawer(
   historyItems: _SearchHistory,
   onFileTap: (path) async {
-    await OpenFilex.open(path); //
+    await OpenFilex.open(path);
+    },
+    onDelete: (index) {
+    setState(() {
+      _SearchHistory.removeAt(index);
+    });
   },
-), // Connected to History Screen
+),
+ // Connected to History Screen
       appBar: AppBar(
         title: const Text("Fetch AI", style: TextStyle(color: Color(0xFFFFB6C1))),
         backgroundColor: Colors.black,
