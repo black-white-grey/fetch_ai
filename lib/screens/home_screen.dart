@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert'; // Required to convert the list to a string
 
 // Import your existing screens
 import 'history_drawer.dart';
@@ -23,25 +25,52 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _controller = TextEditingController();
   final List<String> _messages = [];
 
+  @override
+void initState() {
+  super.initState();
+  _loadHistory(); // Load history as soon as the app starts
+}
+
+// 1. Load history from phone memory
+Future<void> _loadHistory() async {
+  final prefs = await SharedPreferences.getInstance();
+  final String? historyData = prefs.getString('search_history');
+  
+  if (historyData != null) {
+    setState(() {
+      // Convert the saved String back into a List
+      _SearchHistory = List<Map<String, String>>.from(
+        json.decode(historyData).map((item) => Map<String, String>.from(item))
+      );
+    });
+  }
+}
+
+// 2. Save history to phone memory
+Future<void> _saveHistory() async {
+  final prefs = await SharedPreferences.getInstance();
+  // Convert the List into a String to save it
+  String historyData = json.encode(_SearchHistory);
+  await prefs.setString('search_history', historyData);
+}
+
   // Logic to search for PDF files in the Downloads folder
   Future<void> _autoSearchFilesV2(String query) async {
     var status = await Permission.manageExternalStorage.request();
-    
+
     if (status.isGranted) {
       setState(() {
         _messages.add("Searching for: $query...");
       });
 
       try {
-        // Accessing the public Downloads directory
         final directory = Directory('/storage/emulated/0/Download');
-        
+
         if (await directory.exists()) {
           final List<FileSystemEntity> entities = directory.listSync();
           List<String> foundFiles = [];
 
           for (var entity in entities) {
-            // Check for PDF extension
             if (entity is File && entity.path.toLowerCase().endsWith('.pdf')) {
               String fileName = entity.path.split('/').last;
               if (fileName.toLowerCase().contains(query.toLowerCase())) {
@@ -49,28 +78,27 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             }
           }
-          setState(() {
-        if (foundFiles.isNotEmpty) {
-          String fileName = foundFiles.first;
-          //
-          String fullPath = '/storage/emulated/0/Download/$fileName'; 
-          
-          _messages.add("Found it! Here is your file: $fileName");
 
-          // Add to history if it's not already there
-          if (!_SearchHistory.any((item) => item['name'] == fileName)) {
-            _SearchHistory.insert(0, {'name': fileName, 'path': fullPath});
-          }
-        } else {
-          _messages.add("AI: No matching PDFs found in Downloads.");
+          setState(() {
+            if (foundFiles.isNotEmpty) {
+              String fileName = foundFiles.first;
+              String fullPath = '/storage/emulated/0/Download/$fileName';
+
+              _messages.add("Found it! Here is your file: $fileName");
+
+              // Fix: This now uses variables defined right above it
+              if (!_SearchHistory.any((item) => item['name'] == fileName)) {
+                _SearchHistory.insert(0, {'name': fileName, 'path': fullPath});
+                _saveHistory(); // Save to local memory immediately
+              }
+            } else {
+              _messages.add("AI: No matching PDFs found in Downloads.");
+            }
+          });
         }
-      });
-      }
       } catch (e) {
-        setState(() => _messages.add("Error: $e"));
+        print("Error: $e");
       }
-    } else {
-      setState(() => _messages.add("Permission denied. Check phone settings."));
     }
   }
 
@@ -107,6 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _SearchHistory.removeAt(index);
     });
+  _saveHistory();
   },
 ),
  // Connected to History Screen
