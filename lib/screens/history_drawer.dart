@@ -3,20 +3,57 @@ import 'historysearch_screen.dart'; //
 import 'settings_screen.dart'; //
 
 class HistoryDrawer extends StatelessWidget {
-  const HistoryDrawer({super.key});
+  // Define the parameters the drawer will receive
+  final List<Map<String, String>> historyItems;
+  final Function(String) onFileTap;
 
-  // Smooth slide-up transition
-  Route _createSmoothRoute(Widget screen) {
-    return PageRouteBuilder(
-      pageBuilder: (context, animation, secondaryAnimation) => screen,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        const begin = Offset(0.0, 1.0); // Slides up from bottom
-        const end = Offset.zero;
-        var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: Curves.easeOutQuart));
-        return SlideTransition(position: animation.drive(tween), child: child);
-      },
+  // Add them to the constructor
+  const HistoryDrawer({
+    super.key, 
+    required this.historyItems, 
+    required this.onFileTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      backgroundColor: const Color(0xFF1E1E1E),
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Your existing top bar code (icons and user name) remains here...
+            
+            const Divider(color: Colors.white24),
+
+            Expanded(
+              child: historyItems.isEmpty
+                  ? const Center(
+                      child: Text("No history yet", style: TextStyle(color: Colors.white24)),
+                    )
+                  : ListView.builder(
+                      itemCount: historyItems.length,
+                      itemBuilder: (context, index) {
+                        return ListTile(
+                          leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+                          title: Text(
+                            historyItems[index]['name'] ?? 'Unknown File',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          onTap: () {
+                            // Close the drawer and open the file
+                            Navigator.pop(context);
+                            onFileTap(historyItems[index]['path']!);
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -55,4 +92,21 @@ class HistoryDrawer extends StatelessWidget {
       ),
     );
   }
+
+  Route _createSmoothRoute(Widget screen) {
+  return PageRouteBuilder(
+    pageBuilder: (context, animation, secondaryAnimation) => screen,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      const begin = Offset(1.0, 0.0); // Slides in from the right
+      const end = Offset.zero;
+      const curve = Curves.ease;
+
+      var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+
+      return SlideTransition(
+        position: animation.drive(tween),
+        child: child,
+      );
+    },
+  );
 }

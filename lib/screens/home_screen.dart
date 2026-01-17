@@ -11,12 +11,15 @@ import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+  
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // Inside _HomeScreenState
+  List<Map<String, String>> _SearchHistory = []; // Stores { 'name': 'A.pdf', 'path': '...' }
   final TextEditingController _controller = TextEditingController();
   final List<String> _messages = [];
 
@@ -46,15 +49,23 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             }
           }
-
           setState(() {
-            if (foundFiles.isNotEmpty) {
-              _messages.add("Found it! Here is your file: ${foundFiles.first}");
-            } else {
-              _messages.add("AI: No matching PDFs found in Downloads.");
-            }
-          });
+        if (foundFiles.isNotEmpty) {
+          String fileName = foundFiles.first;
+          //
+          String fullPath = '/storage/emulated/0/Download/$fileName'; 
+          
+          _messages.add("Found it! Here is your file: $fileName");
+
+          // Add to history if it's not already there
+          if (!_SearchHistory.any((item) => item['name'] == fileName)) {
+            _SearchHistory.insert(0, {'name': fileName, 'path': fullPath});
+          }
+        } else {
+          _messages.add("AI: No matching PDFs found in Downloads.");
         }
+      });
+      }
       } catch (e) {
         setState(() => _messages.add("Error: $e"));
       }
@@ -87,7 +98,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      drawer: const HistoryDrawer(), // Connected to History Screen
+      drawer: HistoryDrawer(
+  historyItems: _SearchHistory,
+  onFileTap: (path) async {
+    await OpenFilex.open(path); //
+  },
+), // Connected to History Screen
       appBar: AppBar(
         title: const Text("Fetch AI", style: TextStyle(color: Color(0xFFFFB6C1))),
         backgroundColor: Colors.black,
@@ -131,20 +147,20 @@ class _HomeScreenState extends State<HomeScreen> {
                         border: Border.all(color: const Color(0xFFFFB6C1), width: 1.5),
                       ),
                      child: Row(
-  mainAxisSize: MainAxisSize.min, // Prevents the bubble from stretching too far
-  children: [
-    if (isFileResponse) ...[
-      const Icon(Icons.picture_as_pdf, color: Colors.red, size: 24),
-      const SizedBox(width: 10),
-    ],
-    Flexible( // Wraps text if the filename is very long
-      child: Text(
-        _messages[index],
-        style: const TextStyle(color: Colors.white),
-      ),
-    ),
-  ],
-),
+                      mainAxisSize: MainAxisSize.min, // Prevents the bubble from stretching too far
+                        children: [
+                          if (isFileResponse) ...[
+                            const Icon(Icons.picture_as_pdf, color: Colors.red, size: 24),
+                            const SizedBox(width: 10),
+                          ],
+                          Flexible( // Wraps text if the filename is very long
+                    child: Text(
+                      _messages[index],
+                        style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
