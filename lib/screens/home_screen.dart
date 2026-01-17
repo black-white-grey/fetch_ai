@@ -1,10 +1,13 @@
-import 'package:flutter/material.dart';
-import 'history_drawer.dart';
-import 'home_screen.dart';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart'; 
-import 'package:open_filex/open_filex.dart';// Import to allow navigation
+import 'package:permission_handler/permission_handler.dart';
+import 'package:open_filex/open_filex.dart';
+
+// Import your existing screens
+import 'history_drawer.dart';
+import 'historysearch_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,290 +18,149 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _controller = TextEditingController();
-  final List<String> _messages = []; // Stores your chat history
-  bool _isTyping = false;
+  final List<String> _messages = [];
 
-  // Function for the smooth slide transition from the left
-  Route _createLeftToRightRoute() {
-    return PageRouteBuilder(
-      pageBuilder: (context, animation, secondaryAnimation) => const HistoryDrawer(),
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        const begin = Offset(-1.0, 0.0); // Starts from the left off-screen
-        const end = Offset.zero;
-        const curve = Curves.easeInOutQuart;
-
-        var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-
-        return SlideTransition(
-          position: animation.drive(tween),
-          child: child,
-        );
-      },
-    );
-  }
-
-  // Inside _HomeScreenState in home_screen.dart
-
-Future<void> _autoSearchFiles(String query) async {
-  setState(() {
-    _messages.add("Analyzing your request: '$query'...");
-  });
-
-  // 1. Simple Keyword Parsing
-  DateTime now = DateTime.now();
-  DateTime? startTime;
-
-  if (query.toLowerCase().contains("week")) {
-    startTime = now.subtract(const Duration(days: 7));
-  } else if (query.toLowerCase().contains("month")) {
-    startTime = now.subtract(const Duration(days: 30));
-  }
-
-  if (startTime == null) {
-    setState(() {
-      _messages.add("I'm not sure which time frame you mean. Try 'this week'.");
-    });
-    return;
-  }
-
-  // 2. Access the File Manager (Internal Storage)
-  try {
-    // We search the Documents directory for safety
-    final directory = await getApplicationDocumentsDirectory(); 
-    final List<FileSystemEntity> files = directory.listSync();
+  // Logic to search for PDF files in the Downloads folder
+  Future<void> _autoSearchFilesV2(String query) async {
+    var status = await Permission.manageExternalStorage.request();
     
-    List<String> foundFiles = [];
-
-    for (var file in files) {
-      if (file is File && file.path.endsWith('.pdf')) {
-        DateTime fileDate = file.lastModifiedSync();
-        // Check if file date is within the requested range
-        if (fileDate.isAfter(startTime)) {
-          foundFiles.add(file.path.split('/').last);
-        }
-      }
-    }
-
-    // 3. Send the result back to UI
-    setState(() {
-      if (foundFiles.isNotEmpty) {
-        _messages.add("I found ${foundFiles.length} PDF(s) from that period:");
-        for (var fileName in foundFiles) {
-          _messages.add("📄 $fileName");
-        }
-      } else {
-        _messages.add("I couldn't find any PDFs from that timeframe in your documents.");
-      }
-    });
-  } catch (e) {
-    setState(() {
-      _messages.add("Error accessing file manager: $e");
-    });
-  }
-}
-void _handleSendMessage() async {
-  if (_controller.text.isNotEmpty) {
-    String query = _controller.text;
-    
-    setState(() {
-      _messages.add(query); // Add user query to UI
-      _controller.clear();
-      _isTyping = false;
-    });
-
-    // Call the backend/AI service
-    await _searchForFile(query);
-  }
-}
-
-Future<void> _searchForFile(String query) async {
-  // 1. Show a loading indicator in the chat
-  setState(() {
-    _messages.add("Searching for: $query...");
-  });
-
-  // 2. Simulated Backend/AI Logic
-  // In a real app, use the 'http' package to call your API
-  try {
-    // Example: var response = await http.post(Uri.parse('YOUR_AI_BACKEND_URL'), body: {'query': query});
-    
-    // For now, let's simulate a successful find:
-    await Future.delayed(const Duration(seconds: 2)); // Simulate network lag
-    
-    setState(() {
-      _messages.add("Found it! Here is your file: $query.pdf");
-    });
-  } catch (e) {
-    setState(() {
-      _messages.add("Sorry, I couldn't find that file.");
-    });
-  }
-}
-
-Future<void> _autoSearchFilesV2(String query) async {
-  // 1. Request storage permission
-  var status = await Permission.storage.request();
-  
-  if (status.isGranted) {
-    setState(() {
-      _messages.add("AI: Searching your files for '$query'...");
-    });
-
-    try {
-      // 2. Define and find the files
-      final directory = await getApplicationDocumentsDirectory();
-      final List<FileSystemEntity> entities = directory.listSync();
-      
-      // Define foundFiles HERE so the code below can see it
-      List<String> foundFiles = [];
-
-      for (var entity in entities) {
-        if (entity is File && entity.path.endsWith('.pdf')) {
-          // Add your time-filtering logic here if needed
-          foundFiles.add(entity.path.split('/').last);
-        }
-      }
-
-      // 3. Now check if foundFiles is empty or not
+    if (status.isGranted) {
       setState(() {
-        if (foundFiles.isNotEmpty) {
-          _messages.add("AI: I found these files for you:");
-          for (var fileName in foundFiles) {
-            _messages.add("FILE: $fileName");
+        _messages.add("Searching for: $query...");
+      });
+
+      try {
+        // Accessing the public Downloads directory
+        final directory = Directory('/storage/emulated/0/Download');
+        
+        if (await directory.exists()) {
+          final List<FileSystemEntity> entities = directory.listSync();
+          List<String> foundFiles = [];
+
+          for (var entity in entities) {
+            // Check for PDF extension
+            if (entity is File && entity.path.toLowerCase().endsWith('.pdf')) {
+              String fileName = entity.path.split('/').last;
+              if (fileName.toLowerCase().contains(query.toLowerCase())) {
+                foundFiles.add(fileName);
+              }
+            }
           }
-        } else {
-          _messages.add("AI: Sorry, I couldn't find any PDFs matching that.");
+
+          setState(() {
+            if (foundFiles.isNotEmpty) {
+              _messages.add("Found it! Here is your file: ${foundFiles.first}");
+            } else {
+              _messages.add("AI: No matching PDFs found in Downloads.");
+            }
+          });
         }
-      });
-    } catch (e) {
-      setState(() {
-        _messages.add("AI: Error accessing files: $e");
-      });
+      } catch (e) {
+        setState(() => _messages.add("Error: $e"));
+      }
+    } else {
+      setState(() => _messages.add("Permission denied. Check phone settings."));
     }
-  } else {
-    setState(() {
-      _messages.add("AI: Permission denied. I cannot search files.");
-    });
   }
-}
+
+  void _handleSendMessage() {
+    if (_controller.text.trim().isEmpty) return;
+    String userText = _controller.text;
+    
+    setState(() {
+      _messages.add(userText);
+      _controller.clear();
+    });
+
+    // Auto-trigger search if query looks like a file request
+    if (userText.toLowerCase().contains("find") || userText.contains(".pdf")) {
+      _autoSearchFilesV2(userText.replaceAll("find", "").trim());
+    }
+  }
+
+  // Navigation logic for your other three screens
+  void _navigateTo(Widget screen) {
+    Navigator.push(context, MaterialPageRoute(builder: (context) => screen));
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            // 1. Top Menu Button
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFFFFB6C1), width: 1),
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.menu, color: Colors.white),
-                    onPressed: () {
-                      Navigator.of(context).push(_createLeftToRightRoute());
-                    },
-                  ),
-                ),
-              ),
-            ),
-
-            // 2. Chat Message Display Area
-            Expanded(
-              child: _messages.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'Search Files',
-                        style: TextStyle(fontSize: 24, color: Colors.white70),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-  return Align(
-    alignment: Alignment.centerRight,
-    child: GestureDetector(
-      onTap: () async {
-  if (_messages[index].startsWith("FILE:")) {
-    String fileName = _messages[index].replaceFirst("FILE: ", "");
-    final directory = await getApplicationDocumentsDirectory();
-    String filePath = '${directory.path}/$fileName';
-
-    // This uses the package you just downgraded/installed
-    await OpenFilex.open(filePath); 
-  }
-},
-      
-      // MOVE THE CONTAINER HERE - inside the GestureDetector
-      child: Container( 
-        margin: const EdgeInsets.symmetric(vertical: 8),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFFFB6C1), 
-            width: 1.5,
+      backgroundColor: Colors.black,
+      drawer: const HistoryDrawer(), // Connected to History Screen
+      appBar: AppBar(
+        title: const Text("Fetch AI", style: TextStyle(color: Color(0xFFFFB6C1))),
+        backgroundColor: Colors.black,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search, color: Color(0xFFFFB6C1)),
+            onPressed: () => _navigateTo(const HistorySearchScreen()), // Connected to Search
           ),
-        ),
-        child: Text(
-          _messages[index],
-          style: const TextStyle(color: Colors.white),
-        ),
+          IconButton(
+            icon: const Icon(Icons.settings, color: Color(0xFFFFB6C1)),
+            onPressed: () => _navigateTo(const SettingsScreen()), // Connected to Settings
+          ),
+        ],
       ),
-    ),
-  );
-}
-                  )
-            ),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _messages.length,
+              itemBuilder: (context, index) {
+                bool isFileResponse = _messages[index].contains("Found it!");
 
-            // 3. Bottom Input Section (Typing area)
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: const Color(0xFFFFB6C1), width: 1),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        onChanged: (val) {
-                          setState(() {
-                            _isTyping = val.isNotEmpty;
-                          });
-                        },
-                        decoration: const InputDecoration(
-                          hintText: 'Ask Files...',
-                          hintStyle: TextStyle(color: Colors.grey),
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(horizontal: 15),
-                        ),
+                return Align(
+                  alignment: isFileResponse ? Alignment.centerLeft : Alignment.centerRight,
+                  child: GestureDetector(
+                    onTap: () async {
+                      if (isFileResponse) {
+                        // Extract filename and open from Downloads
+                        String fileName = _messages[index].split(": ").last.trim();
+                        String filePath = '/storage/emulated/0/Download/$fileName';
+                        await OpenFilex.open(filePath);
+                      }
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isFileResponse ? Colors.grey[900] : Colors.black,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFFFB6C1), width: 1.5),
+                      ),
+                      child: Text(
+                        _messages[index],
                         style: const TextStyle(color: Colors.white),
                       ),
                     ),
-                    IconButton(
-                      icon: Icon(
-                        _isTyping ? Icons.send : Icons.mic_none,
-                        color: Colors.white,
-                      ),
-                      onPressed: _handleSendMessage,
-                    ),
-                  ],
+                  ),
+                );
+              },
+            ),
+          ),
+          // Input Bar
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: TextField(
+              controller: _controller,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: "Ask Files...",
+                hintStyle: const TextStyle(color: Colors.grey),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.send, color: Color(0xFFFFB6C1)),
+                  onPressed: _handleSendMessage,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                  borderSide: const BorderSide(color: Color(0xFFFFB6C1)),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
