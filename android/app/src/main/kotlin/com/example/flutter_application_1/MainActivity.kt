@@ -1,4 +1,4 @@
-package fetch_ai
+package com.Fetch
 
 import io.flutter.embedding.android.FlutterActivity
 

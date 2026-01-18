@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "252864725468",
+    "project_id": "fetch-72c6b",
+    "storage_bucket": "fetch-72c6b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:252864725468:android:fbcfd1031a235c598a8f19",
+        "android_client_info": {
+          "package_name": "com.Fetch"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCNecQvsoLeJhhVTUfm3n-i8XG11e3t2kc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

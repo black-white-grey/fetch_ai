@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
-import 'screens/home_screen.dart'; // Ensure this path is correct';
+import 'screens/home_screen.dart';
+import 'package:firebase_core/firebase_core.dart'; 
+// Ensure this path is correct';
 
-void main() => runApp(const FetchAIApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized(); //
+  
+  // This line connects your code to the google-services.json config
+  await Firebase.initializeApp(); 
+  
+  runApp(const MyApp());
+}
 
 class FetchAIApp extends StatelessWidget {
   const FetchAIApp({super.key});
@@ -9,7 +18,7 @@ class FetchAIApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Fetch AI',
+      title: 'Fetch',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF1E1E1E),
