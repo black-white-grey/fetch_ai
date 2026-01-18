@@ -58,6 +58,26 @@ Future<void> _saveHistory() async {
   // Logic to search for PDF files in the Downloads folder
   Future<void> _searchAllFolders(String query) async {
   var status = await Permission.manageExternalStorage.request();
+
+  DateTime now = DateTime.now();
+  DateTime? startDate;
+  String cleanQuery = query.toLowerCase().trim();
+
+  // Determine the date range based on user input
+  if (cleanQuery.contains("week")) {
+    startDate = now.subtract(const Duration(days: 7));
+  } else if (cleanQuery.contains("month")) {
+    startDate = DateTime(now.year, now.month - 1, now.day);
+  } else if (cleanQuery.contains("year")) {
+    startDate = DateTime(now.year - 1, now.month, now.day);
+  }
+
+  // Remove time keywords from search so they don't block filename matching
+  String fileKeyword = cleanQuery
+      .replaceAll("this week", "")
+      .replaceAll("this month", "")
+      .replaceAll("this year", "")
+      .trim();
   
   if (status.isGranted) {
     setState(() {
@@ -74,16 +94,27 @@ Future<void> _saveHistory() async {
         // This ignores "Access Denied" errors so the search continues
         debugPrint("Skipping restricted folder: $e");
       })) {
+
         
         // SPEED OPTIMIZATION: Skip system folders that definitely don't have your PDFs
         if (entity.path.contains('/Android') || entity.path.contains('/.')) continue;
+        
 
         if (entity is File && entity.path.toLowerCase().endsWith('.pdf')) {
           String fileName = entity.path.split('/').last;
+          DateTime lastModified = entity.lastModifiedSync();
+
+          bool matchesName = entity.path.toLowerCase().contains(fileKeyword);
+    bool matchesDate = startDate == null || lastModified.isAfter(startDate);
+
+    if (matchesName && matchesDate) {
+      foundFiles.add(entity.path);
+    }
           
           // Use trim() to avoid issues with accidental spaces in user input
           if (fileName.toLowerCase().contains(query.toLowerCase().trim())) {
             foundFiles.add(entity.path);
+          
             // We found a match, so we can stop searching now to save time
             break; 
           }
