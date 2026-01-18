@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart'; //
 import 'screens/home_screen.dart';
-import 'package:firebase_core/firebase_core.dart'; 
-// Ensure this path is correct';
+import 'screens/login_screen.dart';
+ // Ensure this path matches your folder structure
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized(); //
-  
-  // This line connects your code to the google-services.json config
+  // 1. Ensure Flutter bindings are initialized before Firebase
+  WidgetsFlutterBinding.ensureInitialized(); 
+
+  // 2. Initialize Firebase using the google-services.json config
   await Firebase.initializeApp(); 
-  
-  runApp(const MyApp());
+
+  // 3. Start the application
+  runApp(const FetchAIApp()); //
 }
 
 class FetchAIApp extends StatelessWidget {
@@ -18,12 +22,15 @@ class FetchAIApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Fetch',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF1E1E1E),
+      title: 'Fetch AI',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        primaryColor: const Color(0xFFFFB6C1), // Your theme pink
+        scaffoldBackgroundColor: Colors.black,
       ),
-      home: const HomeScreen(), // This will now link to your home_screen.dart
+      // Change this line in your FetchAIApp class in main.dart:
+      home: const LoginScreen(), // This directs to your chat UI
     );
   }
 }
