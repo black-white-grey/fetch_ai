@@ -24,6 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, String>> _SearchHistory = []; // Stores { 'name': 'A.pdf', 'path': '...' }
   final TextEditingController _controller = TextEditingController();
   final List<String> _messages = [];
+  bool _isSearching = false; // Add this line
 
   @override
 void initState() {
@@ -55,53 +56,61 @@ Future<void> _saveHistory() async {
 }
 
   // Logic to search for PDF files in the Downloads folder
-  Future<void> _autoSearchFilesV2(String query) async {
-    var status = await Permission.manageExternalStorage.request();
+  Future<void> _searchAllFolders(String query) async {
+  var status = await Permission.manageExternalStorage.request();
+  
+  if (status.isGranted) {
+    setState(() {
+      _isSearching = true; // Turn on spinner
+      _messages.add("Searching phone for: $query...");
+    });
 
-    if (status.isGranted) {
-      setState(() {
-        _messages.add("Searching for: $query...");
-      });
+    final root = Directory('/storage/emulated/0/');
+    List<String> foundFiles = [];
 
-      try {
-        final directory = Directory('/storage/emulated/0/Download');
+    try {
+      // Use .list() stream to keep the UI alive during the heavy scan
+      await for (var entity in root.list(recursive: true, followLinks: false).handleError((e) {
+        // This ignores "Access Denied" errors so the search continues
+        debugPrint("Skipping restricted folder: $e");
+      })) {
+        
+        // SPEED OPTIMIZATION: Skip system folders that definitely don't have your PDFs
+        if (entity.path.contains('/Android') || entity.path.contains('/.')) continue;
 
-        if (await directory.exists()) {
-          final List<FileSystemEntity> entities = directory.listSync();
-          List<String> foundFiles = [];
-
-          for (var entity in entities) {
-            if (entity is File && entity.path.toLowerCase().endsWith('.pdf')) {
-              String fileName = entity.path.split('/').last;
-              if (fileName.toLowerCase().contains(query.toLowerCase())) {
-                foundFiles.add(fileName);
-              }
-            }
+        if (entity is File && entity.path.toLowerCase().endsWith('.pdf')) {
+          String fileName = entity.path.split('/').last;
+          
+          // Use trim() to avoid issues with accidental spaces in user input
+          if (fileName.toLowerCase().contains(query.toLowerCase().trim())) {
+            foundFiles.add(entity.path);
+            // We found a match, so we can stop searching now to save time
+            break; 
           }
-
-          setState(() {
-            if (foundFiles.isNotEmpty) {
-              String fileName = foundFiles.first;
-              String fullPath = '/storage/emulated/0/Download/$fileName';
-
-              _messages.add("Found it! Here is your file: $fileName");
-
-              // Fix: This now uses variables defined right above it
-              if (!_SearchHistory.any((item) => item['name'] == fileName)) {
-                _SearchHistory.insert(0, {'name': fileName, 'path': fullPath});
-                _saveHistory(); // Save to local memory immediately
-              }
-            } else {
-              _messages.add("AI: No matching PDFs found in Downloads.");
-            }
-          });
         }
-      } catch (e) {
-        print("Error: $e");
       }
+
+      setState(() {
+        _isSearching = false; // Turn off spinner
+        if (foundFiles.isNotEmpty) {
+          String filePath = foundFiles.first;
+          String fileName = filePath.split('/').last;
+          _messages.add("Found it! Here is your file: $fileName");
+
+          if (!_SearchHistory.any((item) => item['path'] == filePath)) {
+            _SearchHistory.insert(0, {'name': fileName, 'path': filePath});
+            _saveHistory(); 
+          }
+        } else {
+          _messages.add("AI: I searched everywhere, but I couldn't find a PDF named '$query'.");
+        }
+      });
+    } catch (e) {
+      setState(() => _isSearching = false);
+      _messages.add("AI Error: Something went wrong during the search.");
     }
   }
-
+}
   void _handleSendMessage() {
     if (_controller.text.trim().isEmpty) return;
     String userText = _controller.text;
@@ -113,7 +122,7 @@ Future<void> _saveHistory() async {
 
     // Auto-trigger search if query looks like a file request
     if (userText.toLowerCase().contains("find") || userText.contains(".pdf")) {
-      _autoSearchFilesV2(userText.replaceAll("find", "").trim());
+  _searchAllFolders(userText.replaceAll("find", "").trim()); // Updated name
     }
   }
 
@@ -166,11 +175,12 @@ Future<void> _saveHistory() async {
                   alignment: isFileResponse ? Alignment.centerLeft : Alignment.centerRight,
                   child: GestureDetector(
                     onTap: () async {
-                      if (isFileResponse) {
-                        // Extract filename and open from Downloads
+                    if (isFileResponse) {
+                      // Look up the path from your history list using the filename
                         String fileName = _messages[index].split(": ").last.trim();
-                        String filePath = '/storage/emulated/0/Download/$fileName';
-                        await OpenFilex.open(filePath);
+                        final historyItem = _SearchHistory.firstWhere((item) => item['name'] == fileName);
+    
+                        await OpenFilex.open(historyItem['path']!); // Opens from the specific folder found
                       }
                     },
                     child: Container(
@@ -202,6 +212,15 @@ Future<void> _saveHistory() async {
               },
             ),
           ),
+          if (_isSearching)
+      const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: CircularProgressIndicator(
+            color: Color(0xFFFFB6C1),
+          ),
+        ),
+      ),
           // Input Bar
           Padding(
             padding: const EdgeInsets.all(16.0),
