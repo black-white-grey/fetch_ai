@@ -30,7 +30,17 @@ class FetchAIApp extends StatelessWidget {
         scaffoldBackgroundColor: Colors.black,
       ),
       // Change this line in your FetchAIApp class in main.dart:
-      home: const LoginScreen(), // This directs to your chat UI
+      home:StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(), //
+        builder: (context, snapshot) {
+          // If the snapshot has user data, they are logged in
+          if (snapshot.hasData) {
+            return const HomeScreen();
+          }
+          // Otherwise, send them to login
+          return const LoginScreen();
+        },
+      ),
     );
-  }
+  } // This directs to your chat UI
 }
