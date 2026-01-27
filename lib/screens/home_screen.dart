@@ -4,7 +4,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert'; // Required to convert the list to a string
+import 'dart:convert';
+import 'package:file_picker/file_picker.dart'; // Ensure this is imported
 
 // Import your existing screens
 import 'history_drawer.dart';
@@ -13,151 +14,134 @@ import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-  
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Inside _HomeScreenState
-  List<Map<String, String>> _SearchHistory = []; // Stores { 'name': 'A.pdf', 'path': '...' }
+
+  
+  List<Map<String, String>> _SearchHistory = [];
   final TextEditingController _controller = TextEditingController();
-  final List<String> _messages = [];
-  bool _isSearching = false; // Add this line
+  
+  // UPDATED: Changed from String to Message object to handle image paths
+  final List<Message> _messages = []; 
+  bool _isSearching = false;
+
+
 
   @override
-void initState() {
-  super.initState();
-  _loadHistory(); // Load history as soon as the app starts
-}
-
-// 1. Load history from phone memory
-Future<void> _loadHistory() async {
-  final prefs = await SharedPreferences.getInstance();
-  final String? historyData = prefs.getString('search_history');
-  
-  if (historyData != null) {
-    setState(() {
-      // Convert the saved String back into a List
-      _SearchHistory = List<Map<String, String>>.from(
-        json.decode(historyData).map((item) => Map<String, String>.from(item))
-      );
-    });
+  void initState() {
+    super.initState();
+    _loadHistory();
   }
-}
 
-// 2. Save history to phone memory
-Future<void> _saveHistory() async {
-  final prefs = await SharedPreferences.getInstance();
-  // Convert the List into a String to save it
-  String historyData = json.encode(_SearchHistory);
-  await prefs.setString('search_history', historyData);
-}
+  Future<void> _loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? historyData = prefs.getString('search_history');
+    if (historyData != null) {
+      setState(() {
+        _SearchHistory = List<Map<String, String>>.from(
+          json.decode(historyData).map((item) => Map<String, String>.from(item))
+        );
+      });
+    }
+  }
 
-  // Logic to search for PDF files in the Downloads folder
+  Future<void> _saveHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    String historyData = json.encode(_SearchHistory);
+    await prefs.setString('search_history', historyData);
+  }
+
+  // UPDATED: This function now picks and adds images to the chat
+  Future<void> _searchFiles() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp'], // Added image formats
+    );
+
+    if (result != null) {
+      String? pickedPath = result.files.first.path;
+      setState(() {
+        _messages.add(Message(
+          text: "Selected: ${result.files.first.name}",
+          filePath: pickedPath,
+          isUser: true,
+        ));
+      });
+    }
+  }
+
   Future<void> _searchAllFolders(String query) async {
-  var status = await Permission.manageExternalStorage.request();
+    var status = await Permission.manageExternalStorage.request();
+    if (!status.isGranted) return;
 
-  DateTime now = DateTime.now();
-  DateTime? startDate;
-  String cleanQuery = query.toLowerCase().trim();
-
-  // Determine the date range based on user input
-  if (cleanQuery.contains("week")) {
-    startDate = now.subtract(const Duration(days: 7));
-  } else if (cleanQuery.contains("month")) {
-    startDate = DateTime(now.year, now.month - 1, now.day);
-  } else if (cleanQuery.contains("year")) {
-    startDate = DateTime(now.year - 1, now.month, now.day);
-  }
-
-  // Remove time keywords from search so they don't block filename matching
-  String fileKeyword = cleanQuery
-      .replaceAll("this week", "")
-      .replaceAll("this month", "")
-      .replaceAll("this year", "")
-      .trim();
-  
-  if (status.isGranted) {
     setState(() {
-      _isSearching = true; // Turn on spinner
-      _messages.add("Searching phone for: $query...");
+      _isSearching = true;
+      _messages.add(Message(text: "Searching phone for: $query...", isUser: false));
     });
 
     final root = Directory('/storage/emulated/0/');
+    String cleanQuery = query.toLowerCase().trim();
     List<String> foundFiles = [];
 
     try {
-      // Use .list() stream to keep the UI alive during the heavy scan
-      await for (var entity in root.list(recursive: true, followLinks: false).handleError((e) {
-        // This ignores "Access Denied" errors so the search continues
-        debugPrint("Skipping restricted folder: $e");
-      })) {
-
-        
-        // SPEED OPTIMIZATION: Skip system folders that definitely don't have your PDFs
+      await for (var entity in root.list(recursive: true, followLinks: false).handleError((e) {})) {
         if (entity.path.contains('/Android') || entity.path.contains('/.')) continue;
-        
 
-        if (entity is File && entity.path.toLowerCase().endsWith('.pdf')) {
-          String fileName = entity.path.split('/').last;
-          DateTime lastModified = entity.lastModifiedSync();
-
-          bool matchesName = entity.path.toLowerCase().contains(fileKeyword);
-    bool matchesDate = startDate == null || lastModified.isAfter(startDate);
-
-    if (matchesName && matchesDate) {
-      foundFiles.add(entity.path);
-    }
+        // UPDATED: Now searches for both PDFs and Images
+        if (entity is File && (entity.path.toLowerCase().endsWith('.pdf') || 
+            entity.path.toLowerCase().endsWith('.jpg') || 
+            entity.path.toLowerCase().endsWith('.png'))) {
           
-          // Use trim() to avoid issues with accidental spaces in user input
-          if (fileName.toLowerCase().contains(query.toLowerCase().trim())) {
+          if (entity.path.toLowerCase().contains(cleanQuery)) {
             foundFiles.add(entity.path);
-          
-            // We found a match, so we can stop searching now to save time
             break; 
           }
         }
       }
 
       setState(() {
-        _isSearching = false; // Turn off spinner
+        _isSearching = false;
         if (foundFiles.isNotEmpty) {
           String filePath = foundFiles.first;
           String fileName = filePath.split('/').last;
-          _messages.add("Found it! Here is your file: $fileName");
+          _messages.add(Message(
+            text: "Found it! Here is your file: $fileName",
+            filePath: filePath,
+            isUser: false,
+          ));
 
           if (!_SearchHistory.any((item) => item['path'] == filePath)) {
             _SearchHistory.insert(0, {'name': fileName, 'path': filePath});
             _saveHistory(); 
           }
         } else {
-          _messages.add("AI: I searched everywhere, but I couldn't find a PDF named '$query'.");
+          _messages.add(Message(text: "AI: I couldn't find any file matching '$query'.", isUser: false));
         }
       });
     } catch (e) {
       setState(() => _isSearching = false);
-      _messages.add("AI Error: Something went wrong during the search.");
+      _messages.add(Message(text: "AI Error: Search failed.", isUser: false));
     }
   }
-}
+
   void _handleSendMessage() {
     if (_controller.text.trim().isEmpty) return;
     String userText = _controller.text;
     
     setState(() {
-      _messages.add(userText);
+      _messages.add(Message(text: userText, isUser: true));
       _controller.clear();
     });
 
-    // Auto-trigger search if query looks like a file request
-    if (userText.toLowerCase().contains("find") || userText.contains(".pdf")) {
-  _searchAllFolders(userText.replaceAll("find", "").trim()); // Updated name
+    if (userText.toLowerCase().contains("find") || userText.contains(".")) {
+      _searchAllFolders(userText.replaceAll("find", "").trim());
     }
   }
 
-  // Navigation logic for your other three screens
   void _navigateTo(Widget screen) {
     Navigator.push(context, MaterialPageRoute(builder: (context) => screen));
   }
@@ -167,29 +151,24 @@ Future<void> _saveHistory() async {
     return Scaffold(
       backgroundColor: Colors.black,
       drawer: HistoryDrawer(
-  historyItems: _SearchHistory,
-  onFileTap: (path) async {
-    await OpenFilex.open(path);
-    },
-    onDelete: (index) {
-    setState(() {
-      _SearchHistory.removeAt(index);
-    });
-  _saveHistory();
-  },
-),
- // Connected to History Screen
+        historyItems: _SearchHistory,
+        onFileTap: (path) async => await OpenFilex.open(path),
+        onDelete: (index) {
+          setState(() => _SearchHistory.removeAt(index));
+          _saveHistory();
+        },
+      ),
       appBar: AppBar(
         title: const Text("Fetch AI", style: TextStyle(color: Color(0xFFFFB6C1))),
         backgroundColor: Colors.black,
         actions: [
           IconButton(
-            icon: const Icon(Icons.search, color: Color(0xFFFFB6C1)),
-            onPressed: () => _navigateTo(const HistorySearchScreen()), // Connected to Search
+            icon: const Icon(Icons.attach_file, color: Color(0xFFFFB6C1)),
+            onPressed: _searchFiles, // Button to trigger image/PDF picker
           ),
           IconButton(
             icon: const Icon(Icons.settings, color: Color(0xFFFFB6C1)),
-            onPressed: () => _navigateTo(const SettingsScreen()), // Connected to Settings
+            onPressed: () => _navigateTo(const SettingsScreen()),
           ),
         ],
       ),
@@ -200,43 +179,38 @@ Future<void> _saveHistory() async {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: _messages.length,
               itemBuilder: (context, index) {
-                bool isFileResponse = _messages[index].contains("Found it!");
+                final message = _messages[index];
+                bool isFile = message.filePath != null;
 
                 return Align(
-                  alignment: isFileResponse ? Alignment.centerLeft : Alignment.centerRight,
-                  child: GestureDetector(
-                    onTap: () async {
-                    if (isFileResponse) {
-                      // Look up the path from your history list using the filename
-                        String fileName = _messages[index].split(": ").last.trim();
-                        final historyItem = _SearchHistory.firstWhere((item) => item['name'] == fileName);
-    
-                        await OpenFilex.open(historyItem['path']!); // Opens from the specific folder found
-                      }
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 8),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: isFileResponse ? Colors.grey[900] : Colors.black,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFFFFB6C1), width: 1.5),
-                      ),
-                     child: Row(
-                      mainAxisSize: MainAxisSize.min, // Prevents the bubble from stretching too far
-                        children: [
-                          if (isFileResponse) ...[
-                            const Icon(Icons.picture_as_pdf, color: Colors.red, size: 24),
-                            const SizedBox(width: 10),
-                          ],
-                          Flexible( // Wraps text if the filename is very long
-                    child: Text(
-                      _messages[index],
-                        style: const TextStyle(color: Colors.white),
-                            ),
+                  alignment: message.isUser ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: message.isUser ? Colors.black : Colors.grey[900],
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFFFB6C1), width: 1.5),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // UPDATED: Added logic to show Image preview or PDF icon
+                        if (isFile) ...[
+                          GestureDetector(
+                            onTap: () => OpenFilex.open(message.filePath!),
+                            child: message.filePath!.toLowerCase().endsWith('.pdf')
+                                ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 40)
+                                : ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Image.file(File(message.filePath!), height: 150, fit: BoxFit.cover),
+                                  ),
                           ),
+                          const SizedBox(height: 8),
                         ],
-                      ),
+                        Text(message.text, style: const TextStyle(color: Colors.white)),
+                      ],
                     ),
                   ),
                 );
@@ -244,15 +218,10 @@ Future<void> _saveHistory() async {
             ),
           ),
           if (_isSearching)
-      const Padding(
-        padding: EdgeInsets.symmetric(vertical: 20),
-        child: Center(
-          child: CircularProgressIndicator(
-            color: Color(0xFFFFB6C1),
-          ),
-        ),
-      ),
-          // Input Bar
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: CircularProgressIndicator(color: Color(0xFFFFB6C1)),
+            ),
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: TextField(
@@ -277,3 +246,19 @@ Future<void> _saveHistory() async {
     );
   }
 }
+
+// NEW: Data model to store message text and file paths
+class Message {
+  final String text;
+  final String? filePath;
+  final bool isUser;
+  final List<String> labels; // New: To store what the AI "sees"
+
+  Message({
+    required this.text, 
+    this.filePath, 
+    required this.isUser, 
+    this.labels = const [] // Default to empty
+  });
+}
+  
