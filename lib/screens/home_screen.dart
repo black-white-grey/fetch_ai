@@ -1,15 +1,15 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import 'package:file_picker/file_picker.dart'; // Ensure this is imported
+import 'package:file_picker/file_picker.dart';
+import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
+import 'package:google_generative_ai/google_generative_ai.dart'; // Ensure this is imported
 
 // Import your existing screens
 import 'history_drawer.dart';
-import 'historysearch_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -57,95 +57,146 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // UPDATED: This function now picks and adds images to the chat
   Future<void> _searchFiles() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp'], // Added image formats
-    );
+  FilePickerResult? result = await FilePicker.platform.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
+  );
 
-    if (result != null) {
-      String? pickedPath = result.files.first.path;
-      setState(() {
-        _messages.add(Message(
-          text: "Selected: ${result.files.first.name}",
-          filePath: pickedPath,
-          isUser: true,
-        ));
-      });
+  if (result != null) {
+    String path = result.files.first.path!;
+    List<String> detectedLabels = [];
+
+    // If it's an image, let the AI "see" it
+    if (!path.toLowerCase().endsWith('.pdf')) {
+      detectedLabels = await _getImageLabels(path);
+      print("AI Detected Labels: $detectedLabels");
     }
+
+    setState(() {
+  _messages.add(Message(
+    text: "Picked: ${result.files.first.name}",
+    filePath: path,
+    isUser: true,
+    labels: detectedLabels, // Use the new name here
+  ));
+});
   }
+}
+
+  Future<List<String>> _getImageLabels(String path) async {
+  final inputImage = InputImage.fromFilePath(path);
+  final imageLabeler = ImageLabeler(options: ImageLabelerOptions(confidenceThreshold: 0.5));
+  
+  final List<ImageLabel> labels = await imageLabeler.processImage(inputImage);
+  List<String> labelTexts = labels.map((label) => label.label.toLowerCase()).toList();
+  
+  imageLabeler.close();
+  return labelTexts;
+}
 
   Future<void> _searchAllFolders(String query) async {
-    var status = await Permission.manageExternalStorage.request();
-    if (!status.isGranted) return;
+  var status = await Permission.manageExternalStorage.request();
+  if (!status.isGranted) return;
+  
 
-    setState(() {
-      _isSearching = true;
-      _messages.add(Message(text: "Searching phone for: $query...", isUser: false));
-    });
+  setState(() {
+    _isSearching = true;
+    _messages.add(Message(text: "AI is scanning your phone...", isUser: false));
+  });
 
-    final root = Directory('/storage/emulated/0/');
-    String cleanQuery = query.toLowerCase().trim();
-    List<String> foundFiles = [];
+  final root = Directory('/storage/emulated/0/');
+  List<String> allFilePaths = []; // FIX: Define allFilePaths here
 
-    try {
-      await for (var entity in root.list(recursive: true, followLinks: false).handleError((e) {})) {
-        if (entity.path.contains('/Android') || entity.path.contains('/.')) continue;
+  try {
+    await for (var entity in root.list(recursive: true).handleError((e) {})) {
+      if (entity is File && !entity.path.contains('/Android')) {
+        allFilePaths.add(entity.path); 
 
-        // UPDATED: Now searches for both PDFs and Images
-        if (entity is File && (entity.path.toLowerCase().endsWith('.pdf') || 
-            entity.path.toLowerCase().endsWith('.jpg') || 
-            entity.path.toLowerCase().endsWith('.png'))) {
-          
-          if (entity.path.toLowerCase().contains(cleanQuery)) {
-            foundFiles.add(entity.path);
-            break; 
-          }
-        }
+        // Inside the root.list loop
+if (entity is File && !entity.path.contains('/Android')) {
+  allFilePaths.add(entity.path); 
+}
+
+// After the loop finishes, check if we found anything
+print("Total files found for AI to scan: ${allFilePaths.length}"); 
+if (allFilePaths.isEmpty) {
+  print("Error: No files found. Check your storage permissions!");
+}
       }
-
-      setState(() {
-        _isSearching = false;
-        if (foundFiles.isNotEmpty) {
-          String filePath = foundFiles.first;
-          String fileName = filePath.split('/').last;
-          _messages.add(Message(
-            text: "Found it! Here is your file: $fileName",
-            filePath: filePath,
-            isUser: false,
-          ));
-
-          if (!_SearchHistory.any((item) => item['path'] == filePath)) {
-            _SearchHistory.insert(0, {'name': fileName, 'path': filePath});
-            _saveHistory(); 
-          }
-        } else {
-          _messages.add(Message(text: "AI: I couldn't find any file matching '$query'.", isUser: false));
-        }
-      });
-    } catch (e) {
-      setState(() => _isSearching = false);
-      _messages.add(Message(text: "AI Error: Search failed.", isUser: false));
     }
-  }
 
-  void _handleSendMessage() {
-    if (_controller.text.trim().isEmpty) return;
-    String userText = _controller.text;
-    
+    // FIX: Pass 'query' (the parameter name) to the Gemini function
+    String bestMatchPath = await _askGeminiToFindFile(allFilePaths, query);
+
     setState(() {
-      _messages.add(Message(text: userText, isUser: true));
-      _controller.clear();
+      _isSearching = false;
+      if (bestMatchPath != "Not found") {
+        _messages.add(Message(
+          text: "AI found: ${bestMatchPath.split('/').last}",
+          filePath: bestMatchPath,
+          isUser: false,
+        ));
+      } else {
+        _messages.add(Message(text: "AI: I couldn't find a match.", isUser: false));
+      }
     });
-
-    if (userText.toLowerCase().contains("find") || userText.contains(".")) {
-      _searchAllFolders(userText.replaceAll("find", "").trim());
-    }
+  } catch (e) {
+    setState(() => _isSearching = false);
   }
+}
+    void _handleSendMessage() {
+  String userText = _controller.text.toLowerCase().trim();
+  if (userText.isEmpty) return;
 
+  setState(() {
+    _messages.add(Message(text: userText, isUser: true));
+    _controller.clear();
+  });
+
+  // STEP 1: Search current chat for AI labels FIRST
+  final matchingImage = _messages.firstWhere(
+    (msg) => msg.labels.contains(userText),
+    orElse: () => Message(text: '', isUser: false),
+  );
+
+  if (matchingImage.text.isNotEmpty) {
+    setState(() {
+      _messages.add(Message(
+        text: "AI: I found a photo matching '$userText'!",
+        filePath: matchingImage.filePath,
+        isUser: false,
+      ));
+    });
+  } 
+  // STEP 2: Only search folders if no AI tag is found
+  else {
+    _searchAllFolders(userText);
+  }
+}
   void _navigateTo(Widget screen) {
     Navigator.push(context, MaterialPageRoute(builder: (context) => screen));
   }
 
+  // Check line 117. It must match this name exactly:
+Future<String> _askGeminiToFindFile(List<String> paths, String query) async {
+  // Use your real API Key from Google AI Studio here
+  final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: 'YOUR_API_KEY'); 
+  
+  // Combine all instructions into ONE prompt variable
+  final String promptInstructions = """
+    You are a file assistant. 
+    User is looking for: '$query'. 
+    From this list of local files: ${paths.take(150).toList()} 
+
+    Instructions: 
+    1. Return ONLY the absolute file path of the best match. 
+    2. Do not include any text, code blocks, or explanations. 
+    3. If no match exists, return 'Not found'.
+  """;
+
+  final response = await model.generateContent([Content.text(promptInstructions)]);
+  return response.text?.trim() ?? "Not found";
+}
   @override
   Widget build(BuildContext context) {
     return Scaffold(
