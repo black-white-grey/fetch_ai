@@ -37,11 +37,14 @@ class SettingsScreen extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text("Night mode", style: TextStyle(color: Colors.white, fontSize: 16)),
+                  const Text(
+                    "Night mode",
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
                   Switch(
-                    value: true, 
-                    onChanged: (val) {}, 
-                    activeColor: babyPink,
+                    value: true,
+                    onChanged: (val) {},
+                    activeThumbColor: babyPink,
                   ),
                 ],
               ),
@@ -70,7 +73,11 @@ class SettingsScreen extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 15),
       child: Text(
         title,
-        style: TextStyle(color: color.withOpacity(0.8), fontSize: 13, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: color.withValues(alpha: 0.8),
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -79,7 +86,10 @@ class SettingsScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
+        ),
         Container(
           margin: const EdgeInsets.symmetric(vertical: 10),
           height: 42,

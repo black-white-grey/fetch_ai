@@ -1,16 +1,15 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
-import 'package:google_generative_ai/google_generative_ai.dart'; // Ensure this is imported
-
 // Import your existing screens
 import 'history_drawer.dart';
 import 'settings_screen.dart';
+import '../services/semantic_search_service.dart';
+import '../services/document_indexer.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,21 +19,19 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-
-  
-  List<Map<String, String>> _SearchHistory = [];
+  List<Map<String, String>> _searchHistory = [];
   final TextEditingController _controller = TextEditingController();
-  
+
   // UPDATED: Changed from String to Message object to handle image paths
-  final List<Message> _messages = []; 
+  final List<Message> _messages = [];
   bool _isSearching = false;
-
-
+  final SemanticSearchService _semanticSearchService = SemanticSearchService();
 
   @override
   void initState() {
     super.initState();
     _loadHistory();
+    _semanticSearchService.init();
   }
 
   Future<void> _loadHistory() async {
@@ -42,8 +39,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final String? historyData = prefs.getString('search_history');
     if (historyData != null) {
       setState(() {
-        _SearchHistory = List<Map<String, String>>.from(
-          json.decode(historyData).map((item) => Map<String, String>.from(item))
+        _searchHistory = List<Map<String, String>>.from(
+          json
+              .decode(historyData)
+              .map((item) => Map<String, String>.from(item)),
         );
       });
     }
@@ -51,166 +50,173 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _saveHistory() async {
     final prefs = await SharedPreferences.getInstance();
-    String historyData = json.encode(_SearchHistory);
+    String historyData = json.encode(_searchHistory);
     await prefs.setString('search_history', historyData);
   }
 
   // UPDATED: This function now picks and adds images to the chat
   Future<void> _searchFiles() async {
-  FilePickerResult? result = await FilePicker.platform.pickFiles(
-    type: FileType.custom,
-    allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
-  );
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'pptx'],
+    );
 
-  if (result != null) {
-    String path = result.files.first.path!;
-    List<String> detectedLabels = [];
+    if (result != null) {
+      String path = result.files.first.path!;
+      List<String> detectedLabels = [];
 
-    // If it's an image, let the AI "see" it
-    if (!path.toLowerCase().endsWith('.pdf')) {
-      detectedLabels = await _getImageLabels(path);
-      print("AI Detected Labels: $detectedLabels");
+      setState(() {
+        _messages.add(
+          Message(text: "Indexing attached document...", isUser: false),
+        );
+      });
+
+      // If it's an image, let the AI "see" it
+      if (!path.toLowerCase().endsWith('.pdf') &&
+          !path.toLowerCase().endsWith('.pptx')) {
+        detectedLabels = await _getImageLabels(path);
+      } else {
+        // Trigger Semantic Indexer for PDFs and PPTXs
+        final doc = await DocumentIndexer.analyzeDocument(path);
+        if (doc != null) {
+          await _semanticSearchService.saveDocumentToIndex(doc);
+          setState(() {
+            _messages.add(
+              Message(
+                text:
+                    "Indexed Academic Doc: ${doc.title}\n\nSummary:\n${doc.summary}\n\nKeywords: ${doc.keywords.join(', ')}",
+                filePath: path,
+                isUser: false,
+              ),
+            );
+          });
+        } else {
+          setState(() {
+            _messages.add(
+              Message(
+                text: "Could not read text from this document.",
+                isUser: false,
+              ),
+            );
+          });
+        }
+      }
+
+      setState(() {
+        _messages.add(
+          Message(
+            text: "Attached: ${result.files.first.name}",
+            filePath: path,
+            isUser: true,
+            labels: detectedLabels,
+          ),
+        );
+      });
     }
-
-    setState(() {
-  _messages.add(Message(
-    text: "Picked: ${result.files.first.name}",
-    filePath: path,
-    isUser: true,
-    labels: detectedLabels, // Use the new name here
-  ));
-});
   }
-}
 
   Future<List<String>> _getImageLabels(String path) async {
-  final inputImage = InputImage.fromFilePath(path);
-  final imageLabeler = ImageLabeler(options: ImageLabelerOptions(confidenceThreshold: 0.5));
-  
-  final List<ImageLabel> labels = await imageLabeler.processImage(inputImage);
-  List<String> labelTexts = labels.map((label) => label.label.toLowerCase()).toList();
-  
-  imageLabeler.close();
-  return labelTexts;
-}
+    final inputImage = InputImage.fromFilePath(path);
+    final imageLabeler = ImageLabeler(
+      options: ImageLabelerOptions(confidenceThreshold: 0.5),
+    );
 
-  Future<void> _searchAllFolders(String query) async {
-  var status = await Permission.manageExternalStorage.request();
-  if (!status.isGranted) return;
-  
+    final List<ImageLabel> labels = await imageLabeler.processImage(inputImage);
+    List<String> labelTexts = labels
+        .map((label) => label.label.toLowerCase())
+        .toList();
 
-  setState(() {
-    _isSearching = true;
-    _messages.add(Message(text: "AI is scanning your phone...", isUser: false));
-  });
+    imageLabeler.close();
+    return labelTexts;
+  }
 
-  final root = Directory('/storage/emulated/0/');
-  List<String> allFilePaths = []; // FIX: Define allFilePaths here
+  Future<void> _performSemanticSearch(String query) async {
+    setState(() {
+      _isSearching = true;
+      _messages.add(
+        Message(text: "Searching academic vault for intent...", isUser: false),
+      );
+    });
 
-  try {
-    await for (var entity in root.list(recursive: true).handleError((e) {})) {
-      if (entity is File && !entity.path.contains('/Android')) {
-        allFilePaths.add(entity.path); 
-
-        // Inside the root.list loop
-if (entity is File && !entity.path.contains('/Android')) {
-  allFilePaths.add(entity.path); 
-}
-
-// After the loop finishes, check if we found anything
-print("Total files found for AI to scan: ${allFilePaths.length}"); 
-if (allFilePaths.isEmpty) {
-  print("Error: No files found. Check your storage permissions!");
-}
-      }
-    }
-
-    // FIX: Pass 'query' (the parameter name) to the Gemini function
-    String bestMatchPath = await _askGeminiToFindFile(allFilePaths, query);
+    final results = await _semanticSearchService.search(query);
 
     setState(() {
       _isSearching = false;
-      if (bestMatchPath != "Not found") {
-        _messages.add(Message(
-          text: "AI found: ${bestMatchPath.split('/').last}",
-          filePath: bestMatchPath,
-          isUser: false,
-        ));
+      if (results.isNotEmpty) {
+        for (var doc in results) {
+          _messages.add(
+            Message(
+              text: "📚 Found: ${doc.title}\n\nKey finding: ${doc.summary}",
+              filePath: doc.path,
+              isUser: false,
+            ),
+          );
+        }
       } else {
-        _messages.add(Message(text: "AI: I couldn't find a match.", isUser: false));
+        _messages.add(
+          Message(
+            text:
+                "No academically relevant documents found for your search intent.",
+            isUser: false,
+          ),
+        );
       }
     });
-  } catch (e) {
-    setState(() => _isSearching = false);
   }
-}
-    void _handleSendMessage() {
-  String userText = _controller.text.toLowerCase().trim();
-  if (userText.isEmpty) return;
 
-  setState(() {
-    _messages.add(Message(text: userText, isUser: true));
-    _controller.clear();
-  });
+  void _handleSendMessage() {
+    String userText = _controller.text.toLowerCase().trim();
+    if (userText.isEmpty) return;
 
-  // STEP 1: Search current chat for AI labels FIRST
-  final matchingImage = _messages.firstWhere(
-    (msg) => msg.labels.contains(userText),
-    orElse: () => Message(text: '', isUser: false),
-  );
-
-  if (matchingImage.text.isNotEmpty) {
     setState(() {
-      _messages.add(Message(
-        text: "AI: I found a photo matching '$userText'!",
-        filePath: matchingImage.filePath,
-        isUser: false,
-      ));
+      _messages.add(Message(text: userText, isUser: true));
+      _controller.clear();
     });
-  } 
-  // STEP 2: Only search folders if no AI tag is found
-  else {
-    _searchAllFolders(userText);
+
+    // STEP 1: Search current chat for AI labels FIRST
+    final matchingImage = _messages.firstWhere(
+      (msg) => msg.labels.contains(userText),
+      orElse: () => Message(text: '', isUser: false),
+    );
+
+    if (matchingImage.text.isNotEmpty) {
+      setState(() {
+        _messages.add(
+          Message(
+            text: "AI: I found a photo matching '$userText'!",
+            filePath: matchingImage.filePath,
+            isUser: false,
+          ),
+        );
+      });
+    }
+    // STEP 2: Only search folders if no AI tag is found
+    else {
+      _performSemanticSearch(userText);
+    }
   }
-}
+
   void _navigateTo(Widget screen) {
     Navigator.push(context, MaterialPageRoute(builder: (context) => screen));
   }
 
-  // Check line 117. It must match this name exactly:
-Future<String> _askGeminiToFindFile(List<String> paths, String query) async {
-  // Use your real API Key from Google AI Studio here
-  final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: 'YOUR_API_KEY'); 
-  
-  // Combine all instructions into ONE prompt variable
-  final String promptInstructions = """
-    You are a file assistant. 
-    User is looking for: '$query'. 
-    From this list of local files: ${paths.take(150).toList()} 
-
-    Instructions: 
-    1. Return ONLY the absolute file path of the best match. 
-    2. Do not include any text, code blocks, or explanations. 
-    3. If no match exists, return 'Not found'.
-  """;
-
-  final response = await model.generateContent([Content.text(promptInstructions)]);
-  return response.text?.trim() ?? "Not found";
-}
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       drawer: HistoryDrawer(
-        historyItems: _SearchHistory,
+        historyItems: _searchHistory,
         onFileTap: (path) async => await OpenFilex.open(path),
         onDelete: (index) {
-          setState(() => _SearchHistory.removeAt(index));
+          setState(() => _searchHistory.removeAt(index));
           _saveHistory();
         },
       ),
       appBar: AppBar(
-        title: const Text("Fetch AI", style: TextStyle(color: Color(0xFFFFB6C1))),
+        title: const Text(
+          "Fetch AI",
+          style: TextStyle(color: Color(0xFFFFB6C1)),
+        ),
         backgroundColor: Colors.black,
         actions: [
           IconButton(
@@ -234,14 +240,19 @@ Future<String> _askGeminiToFindFile(List<String> paths, String query) async {
                 bool isFile = message.filePath != null;
 
                 return Align(
-                  alignment: message.isUser ? Alignment.centerRight : Alignment.centerLeft,
+                  alignment: message.isUser
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
                   child: Container(
                     margin: const EdgeInsets.symmetric(vertical: 8),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: message.isUser ? Colors.black : Colors.grey[900],
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFFFB6C1), width: 1.5),
+                      border: Border.all(
+                        color: const Color(0xFFFFB6C1),
+                        width: 1.5,
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -251,16 +262,28 @@ Future<String> _askGeminiToFindFile(List<String> paths, String query) async {
                         if (isFile) ...[
                           GestureDetector(
                             onTap: () => OpenFilex.open(message.filePath!),
-                            child: message.filePath!.toLowerCase().endsWith('.pdf')
-                                ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 40)
+                            child:
+                                message.filePath!.toLowerCase().endsWith('.pdf')
+                                ? const Icon(
+                                    Icons.picture_as_pdf,
+                                    color: Colors.red,
+                                    size: 40,
+                                  )
                                 : ClipRRect(
                                     borderRadius: BorderRadius.circular(10),
-                                    child: Image.file(File(message.filePath!), height: 150, fit: BoxFit.cover),
+                                    child: Image.file(
+                                      File(message.filePath!),
+                                      height: 150,
+                                      fit: BoxFit.cover,
+                                    ),
                                   ),
                           ),
                           const SizedBox(height: 8),
                         ],
-                        Text(message.text, style: const TextStyle(color: Colors.white)),
+                        Text(
+                          message.text,
+                          style: const TextStyle(color: Colors.white),
+                        ),
                       ],
                     ),
                   ),
@@ -306,10 +329,9 @@ class Message {
   final List<String> labels; // New: To store what the AI "sees"
 
   Message({
-    required this.text, 
-    this.filePath, 
-    required this.isUser, 
-    this.labels = const [] // Default to empty
+    required this.text,
+    this.filePath,
+    required this.isUser,
+    this.labels = const [], // Default to empty
   });
 }
-  
