@@ -10,12 +10,14 @@ class IndexedDocument {
   final String title;
   final String summary;
   final List<String> keywords;
+  final String first500Words;
 
   IndexedDocument({
     required this.path,
     required this.title,
     required this.summary,
     required this.keywords,
+    this.first500Words = '',
   });
 
   Map<String, dynamic> toJson() => {
@@ -23,6 +25,7 @@ class IndexedDocument {
     'title': title,
     'summary': summary,
     'keywords': keywords,
+    'first500Words': first500Words,
   };
 
   factory IndexedDocument.fromJson(Map<String, dynamic> json) =>
@@ -31,6 +34,7 @@ class IndexedDocument {
         title: json['title'],
         summary: json['summary'],
         keywords: List<String>.from(json['keywords']),
+        first500Words: json['first500Words'] ?? '',
       );
 }
 
@@ -93,6 +97,9 @@ class DocumentIndexer {
 
     if (text.isEmpty || text.trim().isEmpty) return null;
 
+    final words = text.split(RegExp(r'\s+'));
+    final first500Words = words.length > 500 ? words.take(500).join(' ') : text;
+
     // Send to Gemini
     try {
       final model = GenerativeModel(
@@ -128,6 +135,7 @@ Format Example: {"summary": "...", "keywords": ["...", "..."]}
           title: path.split('/').last.split('\\').last,
           summary: data['summary'] ?? "No summary generated.",
           keywords: List<String>.from(data['keywords'] ?? []),
+          first500Words: first500Words,
         );
       }
     } catch (e) {

@@ -10,14 +10,17 @@ void main() {
         title: 'test.pdf',
         summary: 'This is a mocked academic summary.',
         keywords: ['AI', 'Development', 'Education'],
+        first500Words: 'These are the first five hundred words of the text.',
       );
 
       final json = doc.toJson();
       expect(json['title'], 'test.pdf');
       expect(json['keywords'].length, 3);
+      expect(json['first500Words'], contains('hundred words'));
 
       final decodedDoc = IndexedDocument.fromJson(json);
       expect(decodedDoc.path, '/storage/emulated/0/test.pdf');
+      expect(decodedDoc.first500Words, isNotEmpty);
     });
 
     test('SemanticSearchService instantiation', () {

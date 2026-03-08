@@ -58,8 +58,8 @@ class SemanticSearchService {
     }
   }
 
-  /// Takes a raw query and compares academic intent against the local index metadata headers.
-  Future<List<IndexedDocument>> search(String query) async {
+  /// Takes a raw intent string and compares academic intent against the local index metadata headers.
+  Future<List<IndexedDocument>> search(String intent) async {
     if (_index.isEmpty) return [];
 
     try {
@@ -76,6 +76,7 @@ class SemanticSearchService {
               "title": doc.title,
               "summary": doc.summary,
               "keywords": doc.keywords,
+              "first500Words": doc.first500Words,
             },
           )
           .toList();
@@ -83,13 +84,14 @@ class SemanticSearchService {
       final prompt =
           """
 You are an Academic Semantic Search Engine. 
-A user is searching for: "$query".
+A user is searching with the intent: "$intent".
 
-Below is a JSON list of available academic documents, including their summaries and keywords:
+Below is a JSON list of available academic documents, including their summaries, keywords, and the first 500 words of their text:
 ${jsonEncode(documentMetadataList)}
 
-Your task is to identify which documents best match the user's INTENT, even if exact keywords do not match.
-Return a JSON array of strings containing ONLY the "path" of the most relevant documents, ordered by relevance (best match first).
+Your task is to identify which documents best match the user's INTENT.
+Crucially, look for conceptual connections. If the user asks for "chemistry", you should identify documents containing words like "Atomic Theory", "Organic", or "Equilibrium" within their summary, keywords, or first500Words, even if the filename is unrelated (e.g., lecture_01.pdf).
+Return a JSON array of strings containing ONLY the "path" of the top 3 most relevant documents, ordered by relevance (best match first).
 If no documents are relevant, return an empty array [].
 DO NOT output markdown blocks. ONLY raw JSON array.
 Format Example: ["/path/to/doc1.pdf", "/path/to/doc2.pptx"]
@@ -108,12 +110,20 @@ Format Example: ["/path/to/doc1.pdf", "/path/to/doc2.pptx"]
         for (String path in matchedPaths) {
           final matchedDoc = _index.firstWhere(
             (doc) => doc.path == path,
-            orElse: () =>
-                IndexedDocument(path: '', title: '', summary: '', keywords: []),
+            orElse: () => IndexedDocument(
+              path: '',
+              title: '',
+              summary: '',
+              keywords: [],
+              first500Words: '',
+            ),
           );
           if (matchedDoc.path.isNotEmpty) {
             results.add(matchedDoc);
           }
+        }
+        if (results.length > 3) {
+          results = results.sublist(0, 3);
         }
         return results;
       }
@@ -123,12 +133,15 @@ Format Example: ["/path/to/doc1.pdf", "/path/to/doc2.pptx"]
     }
 
     // Fallback naive search if Gemini fails
-    return _index.where((doc) {
-      final q = query.toLowerCase();
+    final fallbackResults = _index.where((doc) {
+      final q = intent.toLowerCase();
       return doc.title.toLowerCase().contains(q) ||
           doc.summary.toLowerCase().contains(q) ||
+          doc.first500Words.toLowerCase().contains(q) ||
           doc.keywords.any((k) => k.toLowerCase().contains(q));
     }).toList();
+
+    return fallbackResults.take(3).toList();
   }
 
   List<IndexedDocument> getAllDocuments() {
